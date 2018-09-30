@@ -1027,19 +1027,26 @@ insert a newline character if necessary."
           (dolist (sub-header header-sections)
             (oset sub-header parent 1st-header)))))))
 
-(defun magit-insert-child-count (section)
+(defun magit-insert-child-count (section &optional children)
   "Modify SECTION's heading to contain number of child sections.
 
 If `magit-section-show-child-count' is non-nil and the SECTION
 has children and its heading ends with \":\", then replace that
 with \" (N)\", where N is the number of child sections.
 
+If CHILDREN is non-nil, use it rather than the child sections.
+CHILDREN may be a number or a sequence.
+
 This function is called by `magit-insert-section' after that has
 evaluated its BODY.  Admittedly that's a bit of a hack."
   ;; This has to be fast, not pretty!
   (let (content count)
     (when (and magit-section-show-child-count
-               (setq count (length (oref section children)))
+               (setq count (if children
+                               (if (numberp children)
+                                   children
+                                 (length children))
+                             (length (oref section children))))
                (> count 0)
                (setq content (oref section content))
                (eq (char-before (1- content)) ?:))
