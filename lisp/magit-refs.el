@@ -506,26 +506,35 @@ line is inserted at all."
   (when-let ((tags (magit-git-lines "tag" "--list" "-n"
                                     (cadr magit-refresh-args))))
     (let ((_head (magit-rev-parse "HEAD")))
-      (magit-insert-section (tags)
+      (magit-insert-section section (tags)
         (magit-insert-heading "Tags:")
-        (dolist (tag tags)
-          (string-match "^\\([^ \t]+\\)[ \t]+\\([^ \t\n].*\\)?" tag)
-          (let ((tag (match-string 1 tag))
-                (msg (match-string 2 tag)))
-            (when (magit-refs--insert-refname-p tag)
-              (magit-insert-section section (tag tag t)
-                (magit-insert-heading
-                  (magit-refs--format-focus-column tag 'tag)
-                  (propertize tag 'face 'magit-tag)
-                  (make-string (max 1 (- magit-refs-primary-column-width
-                                         (length tag)))
-                               ?\s)
-                  (and msg (magit-log-propertize-keywords nil msg)))
-                (when (and magit-refs-margin-for-tags (magit-buffer-margin-p))
-                  (magit-refs--format-margin tag))
-                (magit-refs--insert-cherry-commits tag section)))))
+        (magit-insert-child-count section tags)
+        (if (oref section hidden)
+            (oset section washer
+                  (apply-partially #'magit-insert-tags-1 tags))
+          (magit-insert-tags-1 tags section))
         (insert ?\n)
         (magit-make-margin-overlay nil t)))))
+
+(defun magit-insert-tags-1 (tags section)
+  "Insert each tag as a section."
+  (goto-char (oref section content))
+  (dolist (tag tags)
+    (string-match "^\\([^ \t]+\\)[ \t]+\\([^ \t\n].*\\)?" tag)
+    (let ((tag (match-string 1 tag))
+          (msg (match-string 2 tag)))
+      (when (magit-refs--insert-refname-p tag)
+        (magit-insert-section section (tag tag t)
+          (magit-insert-heading
+            (magit-refs--format-focus-column tag 'tag)
+            (propertize tag 'face 'magit-tag)
+            (make-string (max 1 (- magit-refs-primary-column-width
+                                   (length tag)))
+                         ?\s)
+            (and msg (magit-log-propertize-keywords nil msg)))
+          (when (and magit-refs-margin-for-tags (magit-buffer-margin-p))
+            (magit-refs--format-margin tag))
+          (magit-refs--insert-cherry-commits tag section))))))
 
 (defun magit-insert-remote-branches ()
   "Insert sections showing all remote-tracking branches."
