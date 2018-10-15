@@ -31,6 +31,59 @@
 
 ;;; Code:
 
+
+
+
+;; I suspect <string> values need to be ("" <string>) values, in order
+;; that I can pass around a list object which won't change when <string>
+;; changes?  Because I need to map <process> to both the original value
+;; and potentially also an error value.
+
+
+;; (setq mlp '((" " "foo") ("," "bar")))
+;; => ((" " "foo") ("," "bar"))
+;;
+;; This is the more elegant approach:
+;; (setq mode-line-process '(mlp (" " (:eval (mapconcat #'format-mode-line mlp ", ")))))
+;; => (mlp (:eval (mapconcat (function format-mode-line) mlp ", ")))
+;;
+;; We *can* do this without :eval by processing each car whenever we
+;; make a change to mlp (set the first to " " and the rest to ","),
+;; but honestly there's not all that much time spent with a running
+;; git process... it doesn't make much sense to eek out little
+;; efficiency benefits in that way, I think.  So: go with :eval.
+;;
+;; (setq mode-line-process mlp)
+;; ((" " "foo") ("," "bar"))
+;;
+;; (setf (cadar mlp) "wibble")
+;; "wibble"
+;;
+;; mlp
+;; ((" " "wibble") ("," "bar"))
+
+
+;; (push (list (car (process-list)) "bar") mlp)
+;; (push (list (cadr (process-list)) "foo") mlp)
+;; mlp
+;; ((#<process server> "foo") (#<process shell> "bar"))
+;;
+;; (mapcar #'cadr mlp)
+;; ("foo" "bar")
+;;
+;; (setq mode-line-process
+;;       '(mlp (" " (:eval (mapconcat #'format-mode-line (mapcar #'cadr mlp) ", ")))))
+;; => "foo, bar"
+;;
+;; (setf (cadr (assoc (cadr (process-list)) mlp)) '(:propertize "oops" face error))
+;; => "oops, bar" (n.b. face is correct)
+
+
+
+
+
+
+
 (require 'ansi-color)
 (require 'cl-lib)
 (require 'dash)
@@ -43,6 +96,8 @@
 
 (declare-function auth-source-search "auth-source"
                   (&rest spec &key max require create delete &allow-other-keys))
+;; debug only - not needed in patch.
+(declare-function magit-section-value-if "magit-section")
 
 ;;; Options
 
@@ -346,7 +401,7 @@ Process output goes into a new section in the buffer returned by
   "Call PROGRAM synchronously in a separate process.
 Process output goes into a new section in the buffer returned by
 `magit-process-buffer'."
-  (pcase-let ((`(,process-buf . ,section)
+  (pcase-let ((`(,process-buf ,section ,_modelineelement)
                (magit-process-setup program args)))
     (magit-process-finish
      (let ((inhibit-read-only t))
@@ -409,7 +464,7 @@ flattened before use."
     (pcase-let* ((process-environment (magit-process-environment))
                  (default-process-coding-system (magit--process-coding-system))
                  (flat-args (magit-process-git-arguments args))
-                 (`(,process-buf . ,section)
+                 (`(,process-buf ,section ,_modelineelement)
                   (magit-process-setup magit-git-executable flat-args))
                  (inhibit-read-only t))
       (magit-process-finish
@@ -519,7 +574,7 @@ buffer that was current when `magit-start-process' was called (if
 it is a Magit buffer and still alive), as well as the respective
 Magit status buffer."
   (pcase-let*
-      ((`(,process-buf . ,section)
+      ((`(,process-buf ,section ,modelineelement)
         (magit-process-setup program args))
        (process
         (let ((process-connection-type
@@ -531,6 +586,7 @@ Magit status buffer."
           (apply #'start-file-process
                  (file-name-nondirectory program)
                  process-buf program args))))
+    (setcar modelineelement process) ;; Associate the async process object.
     (with-editor-set-process-filter process #'magit-process-filter)
     (set-process-sentinel process #'magit-process-sentinel)
     (set-process-buffer   process process-buf)
@@ -577,12 +633,16 @@ Magit status buffer."
 ;;; Process Internals
 
 (defun magit-process-setup (program args)
-  (magit-process-set-mode-line program args)
-  (let ((pwd default-directory)
-        (buf (magit-process-buffer t)))
-    (cons buf (with-current-buffer buf
-                (prog1 (magit-process-insert-section pwd program args nil nil)
-                  (backward-char 1))))))
+  "Returns the process buffer, section, and new `mode-line-process' entry."
+  (let* ((mlp (magit-process-set-mode-line
+               (magit-process-make-mode-line-str program args)))
+         (pwd default-directory)
+         (buf (magit-process-buffer t))
+         (section (with-current-buffer buf
+                    (prog1 (magit-process-insert-section
+                            pwd program args nil nil)
+                      (backward-char 1)))))
+    (list buf section mlp)))
 
 (defun magit-process-insert-section (pwd program args &optional errcode errlog)
   (let ((inhibit-read-only t)
@@ -870,45 +930,68 @@ as argument."
     map)
   "Keymap for `mode-line-process'.")
 
-(defun magit-process-set-mode-line (program args)
-  "Display the git command (sans arguments) in the mode line."
+(defun magit-process-make-mode-line-str (program args)
+  "Generate `mode-line-process' text based on the git command (sans arguments).
+
+Returns the string object which was created."
   (when (equal program magit-git-executable)
     (setq args (nthcdr (length magit-git-global-arguments) args)))
-  (let ((str (concat " " (propertize
-                          (concat (file-name-nondirectory program)
-                                  (and args (concat " " (car args))))
-                          'mouse-face 'highlight
-                          'keymap magit-mode-line-process-map
-                          'help-echo "mouse-1: Show process buffer"
-                          'face 'magit-mode-line-process))))
-    (magit-repository-local-set 'mode-line-process str)
+  (propertize (concat (file-name-nondirectory program)
+                      (and args (concat " " (car args))))
+              'mouse-face 'highlight
+              'keymap magit-mode-line-process-map
+              'help-echo "mouse-1: Show process buffer"
+              'face 'magit-mode-line-process))
+
+(defun magit-process-set-mode-line (str &optional process)
+  "Update `mode-line-process' with STR, associated with PROCESS."
+  (let* ((alist (magit-repository-local-get 'mode-line-process-alist))
+         (element (assq process alist)))
+    (if element
+        (setf (cadr element) str)
+      ;; Push the new element onto the alist.
+      (setq element (list process str))
+      (magit-repository-local-set 'mode-line-process-alist
+                                  (push element alist)))
+    ;; Ensure all the buffers display our `mode-line-process'.
     (dolist (buf (magit-mode-get-buffers))
       (with-current-buffer buf
-        (setq mode-line-process str)))
-    (force-mode-line-update t)))
+        (setq mode-line-process
+              ;; FIXME:
+              ;; This isn't ideal from an efficiency perspective.
+              ;; There needs to be something to ensure that this
+              ;; evaluation only occurs when it's necessary.
+              '(" " (:eval (mapconcat #'format-mode-line
+                                      (mapcar #'cadr
+                                              (magit-repository-local-get
+                                               'mode-line-process-alist))
+                                      ", "))))))
+    ;; Return the new/updated element.
+    element))
 
-(defun magit-process-set-mode-line-error-status (&optional error str)
-  "Apply an error face to the string set by `magit-process-set-mode-line'.
+(defun magit-process-set-mode-line-error-status (&optional error mlp)
+  "Apply an error face to the string set by `magit-process-make-mode-line-str'.
 
 If ERROR is supplied, include it in the `mode-line-process' tooltip.
 
-If STR is supplied, it replaces the `mode-line-process' text."
-  (setq str (or str (magit-repository-local-get 'mode-line-process)))
-  (when str
+If MLP is not supplied, the latest synchronous process entry is updated."
+  (setq mlp (or mlp (let ((alist (magit-repository-local-get
+                                  'mode-line-process-alist)))
+                      (assq nil alist))))
+  (when mlp
     (setq error (format "%smouse-1: Show process buffer"
                         (if (stringp error)
                             (concat error "\n\n")
                           "")))
-    (setq str (concat " " (propertize
-                           (substring-no-properties str 1)
-                           'mouse-face 'highlight
-                           'keymap magit-mode-line-process-map
-                           'help-echo error
-                           'face 'magit-mode-line-process-error)))
-    (magit-repository-local-set 'mode-line-process str)
-    (dolist (buf (magit-mode-get-buffers))
-      (with-current-buffer buf
-        (setq mode-line-process str)))
+    ;; The process is no longer live, so replace it with an 'error
+    ;; marker, to easily identify any error entries.
+    (setcar mlp 'error)
+    (setf (cadr mlp) (concat " " (propertize
+                                  (substring-no-properties (cadr mlp) 0)
+                                  'mouse-face 'highlight
+                                  'keymap magit-mode-line-process-map
+                                  'help-echo error
+                                  'face 'magit-mode-line-process-error)))
     (force-mode-line-update t)
     ;; We remove any error status from the mode line when a magit
     ;; buffer is refreshed (see `magit-refresh-buffer'), but we must
@@ -937,19 +1020,19 @@ If STR is supplied, it replaces the `mode-line-process' text."
 
 (defun magit-process-unset-mode-line-error-status ()
   "Remove any current error status from the mode line."
-  (let ((status (or mode-line-process
-                    (magit-repository-local-get 'mode-line-process))))
-    (when (and status
-               (eq (get-text-property 1 'face status)
-                   'magit-mode-line-process-error))
-      (magit-process-unset-mode-line))))
+  (magit-repository-local-set
+   'mode-line-process-alist
+   (assq-delete-all 'error (magit-repository-local-get
+                            'mode-line-process-alist)))
+  (force-mode-line-update t))
 
-(defun magit-process-unset-mode-line ()
-  "Remove the git command from the mode line."
+(defun magit-process-unset-mode-line (mlp)
+  "Remove the MLP entry from `mode-line-process'."
   (unless (magit-repository-local-get 'inhibit-magit-process-unset-mode-line)
-    (magit-repository-local-set 'mode-line-process nil)
-    (dolist (buf (magit-mode-get-buffers))
-      (with-current-buffer buf (setq mode-line-process nil)))
+    (magit-repository-local-set
+     'mode-line-process-alist
+     (assq-delete-all (car mlp) (magit-repository-local-get
+                                 'mode-line-process-alist)))
     (force-mode-line-update t)))
 
 (defvar magit-process-error-message-regexps
@@ -1007,12 +1090,20 @@ Limited by `magit-process-error-tooltip-max-lines'."
 (defvar magit-process-finish-apply-ansi-colors nil)
 
 (defun magit-process-finish (arg &optional process-buf command-buf
-                                 default-dir section)
+                                 default-dir section mlp)
   (unless (integerp arg)
+    ;; Obtain the `mode-line-process' entry for this process.
+    ;; If there is no known entry for this process object then the
+    ;; process was called synchronously, and we are looking for the
+    ;; value associated with the `nil' process.
+    (let ((alist (magit-repository-local-get 'mode-line-process-alist)))
+      (setq mlp (or (assq arg alist) (assq nil alist))))
+    ;; Obtain process properties.
     (setq process-buf (process-buffer arg))
     (setq command-buf (process-get arg 'command-buf))
     (setq default-dir (process-get arg 'default-dir))
     (setq section     (process-get arg 'section))
+    ;; Reset arg to the process exit status.
     (setq arg         (process-exit-status arg)))
   (when (fboundp 'dired-uncache)
     (dired-uncache default-dir))
@@ -1046,15 +1137,15 @@ Limited by `magit-process-error-tooltip-max-lines'."
               (magit-section-hide section)))))))
   (if (= arg 0)
       ;; Unset the `mode-line-process' value upon success.
-      (magit-process-unset-mode-line)
+      (magit-process-unset-mode-line mlp)
     ;; Otherwise process the error.
     (let ((msg (magit-process-error-summary process-buf section)))
       ;; Change `mode-line-process' to an error face upon failure.
       (if magit-process-display-mode-line-error
           (magit-process-set-mode-line-error-status
-           (or (magit-process-error-tooltip process-buf section)
-               msg))
-        (magit-process-unset-mode-line))
+           (or (magit-process-error-tooltip process-buf section) msg)
+           mlp)
+        (magit-process-unset-mode-line mlp))
       ;; Either signal the error, or else display the error summary in
       ;; the status buffer and with a message in the echo area.
       (cond
