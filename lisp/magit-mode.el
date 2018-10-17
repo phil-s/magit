@@ -548,6 +548,18 @@ which visits the thing at point using `browse-url'."
       (when (fboundp sym)
         (funcall sym 1)))))
 
+(defsubst magit-mode-line-process ()
+  "Mode line construct for `mode-line-process' for Magit buffers."
+  ;; FIXME:
+  ;; This isn't ideal from an efficiency perspective.  There needs to
+  ;; be something to ensure that this evaluation only occurs when it's
+  ;; necessary.
+  '(" " (:eval (mapconcat #'format-mode-line
+                          (mapcar #'cadr
+                                  (magit-repository-local-get
+                                   'mode-line-process-alist))
+                          ", "))))
+
 (define-derived-mode magit-mode special-mode "Magit"
   "Parent major mode from which Magit major modes inherit.
 
@@ -566,7 +578,7 @@ Magit is documented in info node `(magit)'."
   (add-hook 'deactivate-mark-hook #'magit-section-update-highlight t t)
   (setq-local redisplay-highlight-region-function 'magit-highlight-region)
   (setq-local redisplay-unhighlight-region-function 'magit-unhighlight-region)
-  (setq mode-line-process (magit-repository-local-get 'mode-line-process))
+  (setq mode-line-process (magit-mode-line-process))
   (when (bound-and-true-p global-linum-mode)
     (linum-mode -1))
   (when (and (fboundp 'nlinum-mode)

@@ -956,16 +956,7 @@ Returns the string object which was created."
     ;; Ensure all the buffers display our `mode-line-process'.
     (dolist (buf (magit-mode-get-buffers))
       (with-current-buffer buf
-        (setq mode-line-process
-              ;; FIXME:
-              ;; This isn't ideal from an efficiency perspective.
-              ;; There needs to be something to ensure that this
-              ;; evaluation only occurs when it's necessary.
-              '(" " (:eval (mapconcat #'format-mode-line
-                                      (mapcar #'cadr
-                                              (magit-repository-local-get
-                                               'mode-line-process-alist))
-                                      ", "))))))
+        (setq mode-line-process (magit-mode-line-process))))
     ;; Return the new/updated element.
     element))
 

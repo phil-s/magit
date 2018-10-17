@@ -577,6 +577,7 @@ These sections can be expanded to show the respective commits."
                          magit-submodule-list-columns)))
   (tabulated-list-init-header)
   (add-hook 'tabulated-list-revert-hook 'magit-submodule-list-refresh nil t)
+  (setq mode-line-process (magit-mode-line-process))
   (setq imenu-prev-index-position-function
         #'magit-imenu--submodule-prev-index-position-function)
   (setq imenu-extract-index-name-function
