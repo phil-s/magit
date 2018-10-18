@@ -34,6 +34,14 @@
 
 
 
+
+;; Always set `mode-line-process' nil when the alist is empty; then
+;; there's no need for any other kind of flag.  We need to set that
+;; buffer-locally in all the places anyhow, so this seems like the
+;; simplest way!
+
+
+
 ;; I suspect <string> values need to be ("" <string>) values, in order
 ;; that I can pass around a list object which won't change when <string>
 ;; changes?  Because I need to map <process> to both the original value
@@ -1009,22 +1017,22 @@ If MLP is not supplied, the latest synchronous process entry is updated."
         (add-hook 'pre-command-hook
                   #'enable-magit-process-unset-mode-line)))))
 
-(defun magit-process-unset-mode-line-error-status ()
-  "Remove any current error status from the mode line."
-  (magit-repository-local-set
-   'mode-line-process-alist
-   (assq-delete-all 'error (magit-repository-local-get
-                            'mode-line-process-alist)))
-  (force-mode-line-update t))
-
 (defun magit-process-unset-mode-line (mlp)
   "Remove the MLP entry from `mode-line-process'."
   (unless (magit-repository-local-get 'inhibit-magit-process-unset-mode-line)
-    (magit-repository-local-set
-     'mode-line-process-alist
-     (assq-delete-all (car mlp) (magit-repository-local-get
-                                 'mode-line-process-alist)))
+    (let ((alist (assq-delete-all (car mlp) (magit-repository-local-get
+                                             'mode-line-process-alist))))
+      (magit-repository-local-set 'mode-line-process-alist alist)
+      ;; Avoid processing our mode line :eval when there is no data.
+      (unless alist
+        (dolist (buf (magit-mode-get-buffers))
+          (with-current-buffer buf
+            (setq mode-line-process nil)))))
     (force-mode-line-update t)))
+
+(defun magit-process-unset-mode-line-error-status ()
+  "Remove any current error status from the mode line."
+  (magit-process-unset-mode-line '(error)))
 
 (defvar magit-process-error-message-regexps
   (list "^\\*ERROR\\*: Canceled by user$"
