@@ -178,7 +178,7 @@ prefix argument fetch all remotes."
     (magit-run-git-async
      "fetch" "--verbose" "--recurse-submodules"
      (and magit-fetch-modules-jobs
-          (version<= "2.8.0" (magit-git-version))
+          (magit-can-use-p 'magit-fetch-modules-jobs)
           (list "-j" (number-to-string magit-fetch-modules-jobs)))
      (and all "--all"))))
 

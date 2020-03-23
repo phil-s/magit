@@ -530,6 +530,60 @@ call function WASHER with ARGS as its sole argument."
         (magit-cancel-section))
       (magit-maybe-make-margin-overlay))))
 
+;;; Cache of features supported by the repository-local Git version.
+
+(defun magit-can-use-feature-list (&optional refresh)
+  "Establish the features supported by this repository's Git version.
+
+Returns an alist.  Each element (FEATURE MINIMUM SUPPORTED)
+specifies a feature, the minimum version required to support it,
+and whether or not the version of Git being used for the current
+repository meets that minimum requirement."
+  (or (and (not refresh)
+           (magit-repository-local-get 'git-features))
+      (let (feature-list)
+        ;; The minimum Git version for various features.
+        (when-let ((git-version (magit-git-version)))
+          (dolist (item `((,magit--minimal-git . git)
+                          ("2.6.0" . git-update-ref--create-reflog)
+                          ("2.8.0" . magit-fetch-modules-jobs)
+                          ("2.12.0" . git-submodule-absorbgitdirs)
+                          ("2.13.0" . git-stash-push)
+                          ("2.13.0" . git-name-rev--exclude)
+                          ("2.19.0" . git-diff--ita-visible-in-index)
+                          ("2.25.0" . git-update-index--ignore-skip-worktree-entries)
+                          ))
+            (cl-destructuring-bind (minimum . feature) item
+              (push (list feature minimum (version<= minimum git-version))
+                    feature-list))))
+        ;; Cache and return the feature list.
+        (magit-repository-local-set 'git-features feature-list)
+        feature-list)))
+
+(defun magit-can-use-p (&rest features)
+  "Non-nil when the current repository's git supports all FEATURES."
+  (cl-loop with all-features = (magit-can-use-feature-list)
+           for feature in features
+           for supported = (cadr (alist-get feature all-features))
+           always supported))
+
+(defun magit-can-use-p-minimum-version (&rest features)
+  "The minimum git version needed to support all FEATURES."
+  (cl-loop with all-features = (magit-can-use-feature-list)
+           with minimum-version = magit--minimal-git
+           for feature in features
+           for feature-version = (car (alist-get feature all-features))
+           if (version< minimum-version feature-version)
+           do (setq minimum-version feature-version)
+           finally return minimum-version))
+
+(defun magit-can-use-assert (&rest features)
+  "Signal error if the current repository's git does not support all FEATURES."
+  (unless (apply #'magit-can-use-p features)
+    (error (format "This command requires Git v%s (found v%s)"
+                   (apply #'magit-can-use-p-minimum-version features)
+                   (magit-git-version)))))
+
 (defun magit-git-version (&optional raw)
   (--when-let (let (magit-git-global-arguments)
                 (ignore-errors (substring (magit-git-string "version") 12)))
@@ -1136,7 +1190,7 @@ ref that should have been excluded, then that is discarded and
 this function returns nil instead.  This is unfortunate because
 there might be other refs that do match.  To fix that, update
 Git."
-  (if (version< (magit-git-version) "2.13")
+  (if (not (magit-can-use-p 'git-name-rev--exclude))
       (when-let
           ((ref (magit-git-string "name-rev" "--name-only" "--no-undefined"
                                   (and pattern (concat "--refs=" pattern))
@@ -2031,7 +2085,7 @@ and this option only controls what face is used.")
 
 (defun magit-update-ref (ref message rev &optional stashish)
   (let ((magit--refresh-cache nil))
-    (or (if (not (version< (magit-git-version) "2.6.0"))
+    (or (if (magit-can-use-p 'git-update-ref--create-reflog)
             (zerop (magit-call-git "update-ref" "--create-reflog"
                                    "-m" message ref rev
                                    (or (magit-rev-verify ref) "")))

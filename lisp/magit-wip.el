@@ -296,15 +296,8 @@ commit message."
                      ;; deleted in the temporary index.
                      (magit-call-git
                       "update-index" "--add" "--remove"
-                      (and (pcase (magit-repository-local-get
-                                   'update-index-has-ignore-sw-p 'unset)
-                             (`unset
-                              (let ((val (version<= "2.25.0"
-                                                    (magit-git-version))))
-                                (magit-repository-local-set
-                                 'update-index-has-ignore-sw-p val)
-                                val))
-                             (val val))
+                      (and (magit-can-use-p
+                            'git-update-index--ignore-skip-worktree-entries)
                            "--ignore-skip-worktree-entries")
                       "--" files)
                    (magit-with-toplevel

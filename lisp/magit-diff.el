@@ -2011,12 +2011,7 @@ Staging and applying changes is documented in info node
     ;; intent-to-add files (see #4026).  Cache the result for each
     ;; repo to avoid a `git version' call for every diff insertion.
     (when (and (not (equal (car args) "merge-tree"))
-               (pcase (magit-repository-local-get 'diff-ita-kludge-p 'unset)
-                 (`unset
-                  (let ((val (version<= "2.19.0" (magit-git-version))))
-                    (magit-repository-local-set 'diff-ita-kludge-p val)
-                    val))
-                 (val val)))
+               (magit-can-use-p 'git-diff--ita-visible-in-index))
       (push "--ita-visible-in-index" (cdr args)))
     (when (cl-member-if (lambda (arg) (string-prefix-p "--color-moved" arg)) args)
       (push "--color=always" (cdr args))
