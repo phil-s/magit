@@ -585,10 +585,17 @@ repository meets that minimum requirement."
                    (magit-git-version)))))
 
 (defun magit-git-version (&optional raw)
-  (--when-let (let (magit-git-global-arguments)
-                (ignore-errors (substring (magit-git-string "version") 12)))
-    (if raw it (and (string-match "\\`\\([0-9]+\\(\\.[0-9]+\\)\\{1,2\\}\\)" it)
-                    (match-string 1 it)))))
+  "Return the version number output by \"git version\"."
+  (or (magit-repository-local-get (if raw 'git-version-raw 'git-version))
+      (--when-let (let (magit-git-global-arguments)
+                    (ignore-errors
+                      (substring (magit-git-string "version") 12)))
+        (let ((version (and (string-match
+                             "\\`\\([0-9]+\\(\\.[0-9]+\\)\\{1,2\\}\\)" it)
+                            (match-string 1 it))))
+          (magit-repository-local-set 'git-version-raw it)
+          (magit-repository-local-set 'git-version version)
+          (if raw it version)))))
 
 ;;; Variables
 
