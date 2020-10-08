@@ -546,7 +546,7 @@ repository meets that minimum requirement."
         (when-let ((git-version (magit-git-version)))
           (dolist (item `((,magit--minimal-git . git)
                           ("2.6.0" . git-update-ref--create-reflog)
-                          ("2.8.0" . magit-fetch-modules-jobs)
+                          ("2.8.0" . git-fetch--recurse-submodules--jobs)
                           ("2.12.0" . git-submodule-absorbgitdirs)
                           ("2.13.0" . git-stash-push)
                           ("2.13.0" . git-name-rev--exclude)

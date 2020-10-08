@@ -178,8 +178,8 @@ prefix argument fetch all remotes."
     (magit-run-git-async
      "fetch" "--verbose" "--recurse-submodules"
      (and magit-fetch-modules-jobs
-          (magit-can-use-p 'magit-fetch-modules-jobs)
-          (list "-j" (number-to-string magit-fetch-modules-jobs)))
+          (magit-can-use-p 'git-fetch--recurse-submodules--jobs)
+          (format "--jobs=%d" magit-fetch-modules-jobs))
      (and all "--all"))))
 
 ;;; _
