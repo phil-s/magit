@@ -332,7 +332,7 @@ to do the following.
 
 (defun magit-git-exit-code (&rest args)
   "Execute Git with ARGS, returning its exit code."
-  (apply #'magit-process-file magit-git-executable nil nil nil
+  (apply #'magit-process-file-git nil nil nil
          (magit-process-git-arguments args)))
 
 (defun magit-git-success (&rest args)
@@ -353,7 +353,7 @@ This is an experimental replacement for `magit-git-string', and
 still subject to major changes."
   (magit--with-refresh-cache (cons default-directory args)
     (magit--with-temp-process-buffer
-      (and (zerop (apply #'magit-process-file magit-git-executable nil t nil
+      (and (zerop (apply #'magit-process-file-git nil t nil
                          (magit-process-git-arguments args)))
            (not (bobp))
            (progn
@@ -374,7 +374,7 @@ still subject to major changes.  Also see `magit-git-string-p'."
       (list default-directory 'magit-git-string-ng args)
     (magit--with-temp-process-buffer
       (let* ((args (magit-process-git-arguments args))
-             (status (apply #'magit-process-file magit-git-executable
+             (status (apply #'magit-process-file-git
                             nil t nil args)))
         (if (zerop status)
             (and (not (bobp))
@@ -401,7 +401,7 @@ ignore `magit-git-debug'."
   (setq args (-flatten args))
   (magit--with-refresh-cache (cons default-directory args)
     (magit--with-temp-process-buffer
-      (apply #'magit-process-file magit-git-executable nil (list t nil) nil
+      (apply #'magit-process-file-git nil (list t nil) nil
              (magit-process-git-arguments args))
       (unless (bobp)
         (goto-char (point-min))
@@ -412,7 +412,7 @@ ignore `magit-git-debug'."
   (setq args (-flatten args))
   (magit--with-refresh-cache (cons default-directory args)
     (magit--with-temp-process-buffer
-      (apply #'magit-process-file magit-git-executable nil (list t nil) nil
+      (apply #'magit-process-file-git nil (list t nil) nil
              (magit-process-git-arguments args))
       (buffer-substring-no-properties (point-min) (point-max)))))
 
@@ -447,7 +447,7 @@ add a section in the respective process buffer."
             (progn
               (setq log (make-temp-file "magit-stderr"))
               (delete-file log)
-              (let ((exit (apply #'magit-process-file magit-git-executable
+              (let ((exit (apply #'magit-process-file-git
                                  nil (list t log) nil args)))
                 (when (> exit 0)
                   (let ((msg "Git failed"))
@@ -466,7 +466,7 @@ add a section in the respective process buffer."
                     (message "%s" msg)))
                 exit))
           (ignore-errors (delete-file log))))
-    (apply #'magit-process-file magit-git-executable
+    (apply #'magit-process-file-git
            nil (list t nil) nil args)))
 
 (defun magit--locate-error-message ()
@@ -577,17 +577,21 @@ repository meets that minimum requirement."
            do (setq minimum-version feature-version)
            finally return minimum-version))
 
+(defvar magit-can-use-assert--inhibit nil)
+
 (defun magit-can-use-assert (&rest features)
   "Signal error if the current repository's git does not support all FEATURES."
-  (unless (apply #'magit-can-use-p features)
-    (error (format "This command requires Git v%s (found v%s)"
-                   (apply #'magit-can-use-p-minimum-version features)
-                   (magit-git-version)))))
+  (unless magit-can-use-assert--inhibit
+    (unless (apply #'magit-can-use-p features)
+      (error (format "This command requires Git v%s (found v%s)"
+                     (apply #'magit-can-use-p-minimum-version features)
+                     (magit-git-version))))))
 
 (defun magit-git-version (&optional raw)
   "Return the version number output by \"git version\"."
   (or (magit-repository-local-get (if raw 'git-version-raw 'git-version))
-      (--when-let (let (magit-git-global-arguments)
+      (--when-let (let (magit-git-global-arguments
+                        (magit-can-use-assert--inhibit t))
                     (ignore-errors
                       (substring (magit-git-string "version") 12)))
         (let ((version (and (string-match

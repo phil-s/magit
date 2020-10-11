@@ -412,6 +412,11 @@ conversion."
         (default-process-coding-system (magit--process-coding-system)))
     (apply #'process-file process infile buffer display args)))
 
+(defun magit-process-file-git (&optional infile buffer display &rest args)
+  "A `magit-process-file' wrapper for calling git, asserting compatibility."
+  (magit-can-use-assert 'git)
+  (apply #'magit-process-file magit-git-executable infile buffer display args))
+
 (defun magit-process-environment ()
   ;; The various w32 hacks are only applicable when running on the
   ;; local machine.  As of Emacs 25.1, a local binding of
@@ -620,6 +625,7 @@ Magit status buffer."
 ;;; Process Internals
 
 (defun magit-process-setup (program args)
+  (magit-can-use-assert 'git)
   (magit-process-set-mode-line program args)
   (let ((pwd default-directory)
         (buf (magit-process-buffer t)))
