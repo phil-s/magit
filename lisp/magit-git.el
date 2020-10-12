@@ -544,15 +544,16 @@ repository meets that minimum requirement."
       (let (feature-list)
         ;; The minimum Git version for various features.
         (when-let ((git-version (magit-git-version)))
-          (dolist (item `((,magit--minimal-git . git)
-                          ("2.6.0" . git-update-ref--create-reflog)
-                          ("2.8.0" . git-fetch--recurse-submodules--jobs)
-                          ("2.12.0" . git-submodule-absorbgitdirs)
-                          ("2.13.0" . git-stash-push)
-                          ("2.13.0" . git-name-rev--exclude)
-                          ("2.19.0" . git-diff--ita-visible-in-index)
-                          ("2.25.0" . git-update-index--ignore-skip-worktree-entries)
-                          ))
+          (dolist (item (nreverse
+                         `((,magit--minimal-git . git)
+                           ("2.6.0" . git-update-ref--create-reflog)
+                           ("2.8.0" . git-fetch--recurse-submodules--jobs)
+                           ("2.12.0" . git-submodule-absorbgitdirs)
+                           ("2.13.0" . git-stash-push)
+                           ("2.13.0" . git-name-rev--exclude)
+                           ("2.19.0" . git-diff--ita-visible-in-index)
+                           ("2.25.0" . git-update-index--ignore-skip-worktree-entries)
+                           )))
             (cl-destructuring-bind (minimum . feature) item
               (push (list feature minimum (version<= minimum git-version))
                     feature-list))))
@@ -578,14 +579,29 @@ repository meets that minimum requirement."
            finally return minimum-version))
 
 (defvar magit-can-use-assert--inhibit nil)
+(defvar magit-can-use-git--asserted nil)
 
 (defun magit-can-use-assert (&rest features)
   "Signal error if the current repository's git does not support all FEATURES."
   (unless magit-can-use-assert--inhibit
-    (unless (apply #'magit-can-use-p features)
-      (error (format "This command requires Git v%s (found v%s)"
-                     (apply #'magit-can-use-p-minimum-version features)
-                     (magit-git-version))))))
+    ;; Only test the `git' feature once per command, as we assert this
+    ;; before every call to git (accounting for the vast majority of
+    ;; the feature assertions).
+    (when (memq 'git features)
+      (if magit-can-use-git--asserted
+          (setq features (delq 'git features))
+        (setq magit-can-use-git--asserted t)
+        (add-hook 'pre-command-hook #'magit-can-use-assert--pre-command)))
+    (when features
+      (unless (apply #'magit-can-use-p features)
+        (error (format "This command requires Git v%s (found v%s)"
+                       (apply #'magit-can-use-p-minimum-version features)
+                       (magit-git-version)))))))
+
+(defun magit-can-use-assert--pre-command ()
+  "Reset the `magit-can-use-git--asserted' state."
+  (remove-hook 'pre-command-hook #'magit-can-use-assert--pre-command)
+  (setq magit-can-use-git--asserted nil))
 
 (defun magit-git-version (&optional raw)
   "Return the version number output by \"git version\"."
